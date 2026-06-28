@@ -11,43 +11,64 @@ from htmlTemplates import css, bot_template, user_template
 from langchain.llms import HuggingFaceHub
 from langchain.docstore.document import Document
 
-def get_pdf_text(pdf_docs):
-    text = ""
+def get_pdf_documents(pdf_docs):
+    documents = []
+
     for pdf in pdf_docs:
         pdf_reader = PdfReader(pdf)
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-    return text
+
+        for page_number, page in enumerate(pdf_reader.pages):
+            text = page.extract_text()
+
+            if text:
+                documents.append(
+                    Document(
+                        page_content=text,
+                        metadata={
+                            "source": pdf.name,
+                            "page": page_number + 1
+                        }
+                    )
+                )
+
+    return documents
 
 
-def get_text_chunks(text):
+def get_text_chunks(documents):
     text_splitter = CharacterTextSplitter(
         separator="\n",
         chunk_size=1000,
         chunk_overlap=200,
         length_function=len
     )
-    chunks = text_splitter.split_text(text)
-    return chunks
+
+    chunked_documents = text_splitter.split_documents(documents)
+
+    return chunked_documents
 
 
-def get_vectorstore(text_chunks):
+def get_vectorstore(chunked_documents):
     embeddings = OpenAIEmbeddings()
     # embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
-    vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
-    return vectorstore
 
+    vectorstore = FAISS.from_documents(
+        documents=chunked_documents,
+        embedding=embeddings
+    )
+
+    return vectorstore
 
 def get_conversation_chain(vectorstore):
     llm = ChatOpenAI()
     # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
 
     memory = ConversationBufferMemory(
-        memory_key='chat_history', return_messages=True)
+        memory_key='chat_history', return_messages=True,output_key="answer")
     conversation_chain = ConversationalRetrievalChain.from_llm(
         llm=llm,
-        retriever=vectorstore.as_retriever(),
-        memory=memory
+        retriever=vectorstore.as_retriever(search_kwargs={"k": 4}),
+        memory=memory,
+        return_source_documents=True
     )
     return conversation_chain
 
@@ -55,14 +76,41 @@ def get_conversation_chain(vectorstore):
 def handle_userinput(user_question):
     response = st.session_state.conversation({'question': user_question})
     st.session_state.chat_history = response['chat_history']
-
+    source_documents = response["source_documents"]
+    
     for i, message in enumerate(st.session_state.chat_history):
         if i % 2 == 0:
             st.write(user_template.replace(
                 "{{MSG}}", message.content), unsafe_allow_html=True)
         else:
-            st.write(bot_template.replace(
-                "{{MSG}}", message.content), unsafe_allow_html=True)
+            st.write(
+                bot_template.replace("{{MSG}}", message.content),
+                unsafe_allow_html=True
+                )
+
+            sources = {}
+
+            for doc in source_documents:
+              filename = doc.metadata["source"]
+              page = doc.metadata["page"]
+
+              if filename not in sources:
+               sources[filename] = set()
+
+              sources[filename].add(page)
+
+            st.markdown("**Sources:**")
+
+            for filename in sorted(sources.keys()):
+               pages = sorted(sources[filename])
+
+               if len(pages) == 1:
+                 page_text = f"Page {pages[0]}"
+               else:
+                 page_text = "Pages " + ", ".join(str(page) for page in pages)
+ 
+               st.write(f"• {filename} ({page_text})")
+           
 
 
 def main():
@@ -87,14 +135,14 @@ def main():
             "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
         if st.button("Process"):
             with st.spinner("Processing"):
-                # get pdf text
-                raw_text = get_pdf_text(pdf_docs)
+                # get pdf documents
+                documents = get_pdf_documents(pdf_docs)
 
-                # get the text chunks
-                text_chunks = get_text_chunks(raw_text)
+                # get the document chunks
+                chunked_documents = get_text_chunks(documents)
 
                 # create vector store
-                vectorstore = get_vectorstore(text_chunks)
+                vectorstore = get_vectorstore(chunked_documents)
 
                 # create conversation chain
                 st.session_state.conversation = get_conversation_chain(
