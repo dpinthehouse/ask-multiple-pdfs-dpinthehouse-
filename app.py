@@ -75,41 +75,28 @@ def get_conversation_chain(vectorstore):
 
 def handle_userinput(user_question):
     response = st.session_state.conversation({'question': user_question})
-    st.session_state.chat_history = response['chat_history']
+
+    st.session_state.chat_history = response["chat_history"]
     source_documents = response["source_documents"]
-    
+
+    # Display chat history
     for i, message in enumerate(st.session_state.chat_history):
         if i % 2 == 0:
-            st.write(user_template.replace(
-                "{{MSG}}", message.content), unsafe_allow_html=True)
-        else:
             st.write(
-                bot_template.replace("{{MSG}}", message.content),
+                user_template.replace("{{MSG}}", message.content),
                 unsafe_allow_html=True
-                )
+            )
+        else:
+            st.write(message.content)
 
-            sources = {}
+    # Display sources
+    st.markdown("### Sources")
 
-            for doc in source_documents:
-              filename = doc.metadata["source"]
-              page = doc.metadata["page"]
+    for doc in source_documents:
+        filename = doc.metadata.get("source", "Unknown Source")
+        page = doc.metadata.get("page", "Unknown Page")
 
-              if filename not in sources:
-               sources[filename] = set()
-
-              sources[filename].add(page)
-
-            st.markdown("**Sources:**")
-
-            for filename in sorted(sources.keys()):
-               pages = sorted(sources[filename])
-
-               if len(pages) == 1:
-                 page_text = f"Page {pages[0]}"
-               else:
-                 page_text = "Pages " + ", ".join(str(page) for page in pages)
- 
-               st.write(f"• {filename} ({page_text})")
+        st.write(f"📄 {filename} (Page {page})")
            
 
 
