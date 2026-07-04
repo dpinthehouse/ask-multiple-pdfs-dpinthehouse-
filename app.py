@@ -87,16 +87,43 @@ def handle_userinput(user_question):
                 unsafe_allow_html=True
             )
         else:
-            st.write(message.content)
+            st.write(
+                bot_template.replace("{{MSG}}", message.content),
+                unsafe_allow_html=True
+            )
 
-    # Display sources
+    # Display grouped evidence
     st.markdown("### Sources")
+
+    grouped_sources = {}
 
     for doc in source_documents:
         filename = doc.metadata.get("source", "Unknown Source")
         page = doc.metadata.get("page", "Unknown Page")
 
+        snippet = doc.page_content[:300]
+
+        if len(doc.page_content) > 300:
+            snippet += "..."
+
+        key = (filename, page)
+
+        if key not in grouped_sources:
+            grouped_sources[key] = []
+
+        # Prevent duplicate snippets
+        if snippet not in grouped_sources[key]:
+            grouped_sources[key].append(snippet)
+
+    # Display grouped results
+    for (filename, page), snippets in grouped_sources.items():
+
         st.write(f"📄 {filename} (Page {page})")
+
+        for snippet in snippets:
+            st.markdown(f"> {snippet}")
+
+        st.markdown("---")
            
 
 
