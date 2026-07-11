@@ -1,3 +1,4 @@
+import time
 import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
@@ -72,12 +73,46 @@ def get_conversation_chain(vectorstore):
     )
     return conversation_chain
 
+def highlight_answer_words(snippet, answer):
+    stop_words = {
+        "the", "a", "an", "is", "are", "was", "were",
+        "at", "in", "on", "of", "to", "for", "and",
+        "or", "with", "by"
+    }
+
+    words = answer.split()
+
+    for word in words:
+        clean_word = word.strip(".,!?()[]{}:;'\"").lower()
+
+        if len(clean_word) < 4:
+            continue
+
+        if clean_word in stop_words:
+            continue
+
+        original_word = word.strip(".,!?()[]{}:;'\"")
+
+        snippet = snippet.replace(
+            original_word,
+            f"**{original_word}**"
+        )
+
+    return snippet
+
 
 def handle_userinput(user_question):
+    start_time = time.time()
+
     response = st.session_state.conversation({'question': user_question})
+
+    end_time = time.time()
+    response_time = end_time - start_time
+    answer = response["answer"]
 
     st.session_state.chat_history = response["chat_history"]
     source_documents = response["source_documents"]
+    num_sources = len(source_documents)
 
     # Display chat history
     for i, message in enumerate(st.session_state.chat_history):
@@ -91,7 +126,10 @@ def handle_userinput(user_question):
                 bot_template.replace("{{MSG}}", message.content),
                 unsafe_allow_html=True
             )
+    
+    st.info(f"⚡ Answer generated in {response_time:.2f} seconds")
 
+    st.success(f"✓ Answer supported by {num_sources} document excerpts")
     # Display grouped evidence
     st.markdown("### Sources")
 
@@ -101,10 +139,12 @@ def handle_userinput(user_question):
         filename = doc.metadata.get("source", "Unknown Source")
         page = doc.metadata.get("page", "Unknown Page")
 
-        snippet = doc.page_content[:300]
+        snippet = doc.page_content[:180]
 
-        if len(doc.page_content) > 300:
+        if len(doc.page_content) > 180:
             snippet += "..."
+
+        snippet = highlight_answer_words(snippet, answer)    
 
         key = (filename, page)
 
@@ -115,15 +155,22 @@ def handle_userinput(user_question):
         if snippet not in grouped_sources[key]:
             grouped_sources[key].append(snippet)
 
+    labels = [
+    "🥇 Most Relevant",
+    "🥈 Relevant",
+    "🥉 Additional Context"
+]
     # Display grouped results
-    for (filename, page), snippets in grouped_sources.items():
-
-        st.write(f"📄 {filename} (Page {page})")
-
+    for index, ((filename, page), snippets) in enumerate(grouped_sources.items()): 
+     
+     if index < len(labels):
+        relevance = labels[index]
+     else:
+        relevance = "📄 Supporting Evidence"
+        
+     with st.expander(f"{relevance} • {filename} (Page {page})"):
         for snippet in snippets:
-            st.markdown(f"> {snippet}")
-
-        st.markdown("---")
+            st.markdown(snippet)
            
 
 
@@ -144,24 +191,33 @@ def main():
         handle_userinput(user_question)
 
     with st.sidebar:
-        st.subheader("Your documents")
-        pdf_docs = st.file_uploader(
-            "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
-        if st.button("Process"):
-            with st.spinner("Processing"):
-                # get pdf documents
-                documents = get_pdf_documents(pdf_docs)
+     st.subheader("Your documents")
 
-                # get the document chunks
-                chunked_documents = get_text_chunks(documents)
+     pdf_docs = st.file_uploader(
+        "Upload your PDFs here and click on 'Process'",
+        accept_multiple_files=True
+     )
 
-                # create vector store
-                vectorstore = get_vectorstore(chunked_documents)
+     if st.button("Process"):
+        with st.spinner("Processing"):
 
-                # create conversation chain
-                st.session_state.conversation = get_conversation_chain(
-                    vectorstore)
+            # get pdf documents
+            documents = get_pdf_documents(pdf_docs)
+            num_pdfs = len(pdf_docs)
+            num_pages = len(documents)
+            # get the document chunks
+            chunked_documents = get_text_chunks(documents)
+            num_chunks = len(chunked_documents)
+            # create vector store
+            vectorstore = get_vectorstore(chunked_documents)
 
+            # create conversation chain
+            st.session_state.conversation = get_conversation_chain(
+                vectorstore
+            ) 
+            st.success(f"✓ Processed {num_pdfs} PDF(s)")
+            st.info(f"📄 Total pages: {num_pages}")
+            st.info(f"🧩 Total chunks: {num_chunks}")
 
 if __name__ == '__main__':
     main()
