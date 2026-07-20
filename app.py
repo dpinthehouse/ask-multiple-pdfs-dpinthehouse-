@@ -49,13 +49,16 @@ def get_text_chunks(documents):
 
 
 def get_vectorstore(chunked_documents):
+    st.write(f"Creating embeddings for {len(chunked_documents)} chunks...")
+
     embeddings = OpenAIEmbeddings()
-    # embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
 
     vectorstore = FAISS.from_documents(
         documents=chunked_documents,
         embedding=embeddings
     )
+
+    st.write("Embeddings complete!")
 
     return vectorstore
 
@@ -197,27 +200,42 @@ def main():
         "Upload your PDFs here and click on 'Process'",
         accept_multiple_files=True
      )
+     selected_documents = []
+
+     if pdf_docs:
+      st.markdown("### Select documents to search")
+
+      for pdf in pdf_docs:
+        if st.checkbox(pdf.name, value=True):
+            selected_documents.append(pdf)
 
      if st.button("Process"):
         with st.spinner("Processing"):
 
-            # get pdf documents
-            documents = get_pdf_documents(pdf_docs)
-            num_pdfs = len(pdf_docs)
-            num_pages = len(documents)
-            # get the document chunks
-            chunked_documents = get_text_chunks(documents)
-            num_chunks = len(chunked_documents)
-            # create vector store
-            vectorstore = get_vectorstore(chunked_documents)
+         st.write("Step 1: Reading PDFs...")
 
-            # create conversation chain
-            st.session_state.conversation = get_conversation_chain(
-                vectorstore
-            ) 
-            st.success(f"✓ Processed {num_pdfs} PDF(s)")
-            st.info(f"📄 Total pages: {num_pages}")
-            st.info(f"🧩 Total chunks: {num_chunks}")
+         documents = get_pdf_documents(selected_documents)
+         num_pdfs = len(selected_documents)
+         num_pages = len(documents)
+
+         st.write("Step 2: Splitting text...")
+
+         chunked_documents = get_text_chunks(documents)
+         num_chunks = len(chunked_documents)
+
+         st.write("Step 3: Creating vector store...")
+
+         vectorstore = get_vectorstore(chunked_documents)
+
+         st.write("Step 4: Building conversation chain...")
+
+         st.session_state.conversation = get_conversation_chain(vectorstore)
+
+         st.success("Done!")
+
+         st.success(f"✓ Processed {num_pdfs} PDF(s)")
+         st.info(f"📄 Total pages: {num_pages}")
+         st.info(f"🧩 Total chunks: {num_chunks}")
 
 if __name__ == '__main__':
     main()
