@@ -53,12 +53,17 @@ def get_vectorstore(chunked_documents):
 
     embeddings = OpenAIEmbeddings()
 
-    vectorstore = FAISS.from_documents(
-        documents=chunked_documents,
+    texts = [doc.page_content for doc in chunked_documents]
+
+    vectors = [
+        embeddings.embed_query(text)
+        for text in texts
+    ]
+
+    vectorstore = FAISS.from_embeddings(
+        text_embeddings=list(zip(texts, vectors)),
         embedding=embeddings
     )
-
-    st.write("Embeddings complete!")
 
     return vectorstore
 
@@ -179,63 +184,110 @@ def handle_userinput(user_question):
 
 def main():
     load_dotenv()
-    st.set_page_config(page_title="Chat with multiple PDFs",
-                       page_icon=":books:")
+
+    st.set_page_config(
+        page_title="Chat with multiple PDFs",
+        page_icon=":books:"
+    )
+
     st.write(css, unsafe_allow_html=True)
 
     if "conversation" not in st.session_state:
         st.session_state.conversation = None
+
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
 
     st.header("Chat with multiple PDFs :books:")
+
     user_question = st.text_input("Ask a question about your documents:")
+
     if user_question:
         handle_userinput(user_question)
 
     with st.sidebar:
-     st.subheader("Your documents")
 
-     pdf_docs = st.file_uploader(
-        "Upload your PDFs here and click on 'Process'",
-        accept_multiple_files=True
-     )
-     selected_documents = []
+        st.subheader("Your documents")
 
-     if pdf_docs:
-      st.markdown("### Select documents to search")
+        pdf_docs = st.file_uploader(
+            "Upload your PDFs here and click on 'Process'",
+            accept_multiple_files=True
+        )
 
-      for pdf in pdf_docs:
-        if st.checkbox(pdf.name, value=True):
-            selected_documents.append(pdf)
+        selected_documents = []
 
-     if st.button("Process"):
-        with st.spinner("Processing"):
+        if pdf_docs:
 
-         st.write("Step 1: Reading PDFs...")
+            st.markdown("### Select documents to search")
 
-         documents = get_pdf_documents(selected_documents)
-         num_pdfs = len(selected_documents)
-         num_pages = len(documents)
+            col1, col2 = st.columns(2)
 
-         st.write("Step 2: Splitting text...")
+            if col1.button("Select All"):
+                for pdf in pdf_docs:
+                    st.session_state[f"doc_{pdf.name}"] = True
 
-         chunked_documents = get_text_chunks(documents)
-         num_chunks = len(chunked_documents)
+            if col2.button("Deselect All"):
+                for pdf in pdf_docs:
+                    st.session_state[f"doc_{pdf.name}"] = False
 
-         st.write("Step 3: Creating vector store...")
+            for pdf in pdf_docs:
 
-         vectorstore = get_vectorstore(chunked_documents)
+                key = f"doc_{pdf.name}"
 
-         st.write("Step 4: Building conversation chain...")
+                if key not in st.session_state:
+                    st.session_state[key] = True
 
-         st.session_state.conversation = get_conversation_chain(vectorstore)
+                if st.checkbox(pdf.name, key=key):
+                    selected_documents.append(pdf)
 
-         st.success("Done!")
+        total_docs = len(pdf_docs) if pdf_docs else 0
 
-         st.success(f"✓ Processed {num_pdfs} PDF(s)")
-         st.info(f"📄 Total pages: {num_pages}")
-         st.info(f"🧩 Total chunks: {num_chunks}")
+        st.caption(
+            f"Selected {len(selected_documents)} of {total_docs} document(s)"
+        )
 
-if __name__ == '__main__':
+        process_clicked = st.button(
+            "Process",
+            disabled=not pdf_docs
+        )
+
+        if process_clicked:
+
+            if not selected_documents:
+                st.warning("Please select at least one document.")
+                st.stop()
+
+            with st.spinner("Processing"):
+
+                st.write("Step 1: Reading PDFs...")
+
+                documents = get_pdf_documents(selected_documents)
+
+                num_pdfs = len(selected_documents)
+                num_pages = len(documents)
+
+                st.write("Step 2: Splitting text...")
+
+                chunked_documents = get_text_chunks(documents)
+
+                num_chunks = len(chunked_documents)
+
+                st.write("Step 3: Creating vector store...")
+
+                vectorstore = get_vectorstore(chunked_documents)
+
+                st.write("Step 4: Building conversation chain...")
+
+                st.session_state.conversation = get_conversation_chain(
+                    vectorstore
+                )
+
+                st.success("Done!")
+
+                st.success(f"✓ Processed {num_pdfs} PDF(s)")
+                st.info(f"📄 Total pages: {num_pages}")
+                st.info(f"🧩 Total chunks: {num_chunks}")
+
+
+if __name__ == "__main__":
     main()
