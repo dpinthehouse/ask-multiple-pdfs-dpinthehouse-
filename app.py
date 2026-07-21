@@ -198,12 +198,19 @@ def main():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
 
+    if "document_info" not in st.session_state:
+        st.session_state.document_info = []    
+
     st.header("Chat with multiple PDFs :books:")
 
     user_question = st.text_input("Ask a question about your documents:")
 
     if user_question:
-        handle_userinput(user_question)
+
+        if st.session_state.conversation is None:
+           st.warning("Please process at least one document first.")
+        else:
+           handle_userinput(user_question)
 
     with st.sidebar:
 
@@ -266,6 +273,21 @@ def main():
                 num_pdfs = len(selected_documents)
                 num_pages = len(documents)
 
+                st.session_state.document_info = []
+
+                for pdf in selected_documents:
+
+                  pdf.seek(0)
+
+                  reader = PdfReader(pdf)
+
+                  st.session_state.document_info.append({
+                    "name": pdf.name,
+                    "pages": len(reader.pages)
+                  })
+
+                  pdf.seek(0)
+
                 st.write("Step 2: Splitting text...")
 
                 chunked_documents = get_text_chunks(documents)
@@ -287,7 +309,34 @@ def main():
                 st.success(f"✓ Processed {num_pdfs} PDF(s)")
                 st.info(f"📄 Total pages: {num_pages}")
                 st.info(f"🧩 Total chunks: {num_chunks}")
+        st.markdown("---")
 
+        if st.session_state.document_info:
+           st.success("🟢 Ready to Chat")
+        else:
+           st.warning("🔴 No documents processed")
+
+        if st.session_state.document_info:
+
+           st.subheader("Processed Documents")
+
+           for doc in st.session_state.document_info:
+
+            st.success(f"✓ {doc['name']}")
+            st.caption(f"📄 {doc['pages']} page(s)")
+                
+        if st.button("🗑 Clear Documents"):
+
+            st.session_state.document_info = []
+            st.session_state.conversation = None
+            st.session_state.chat_history = None
+
+           # Clear all document checkbox states
+            for key in list(st.session_state.keys()):
+              if key.startswith("doc_"):
+                del st.session_state[key]
+
+            st.experimental_rerun()
 
 if __name__ == "__main__":
     main()
