@@ -49,21 +49,17 @@ def get_text_chunks(documents):
 
 
 def get_vectorstore(chunked_documents):
+
     st.write(f"Creating embeddings for {len(chunked_documents)} chunks...")
 
     embeddings = OpenAIEmbeddings()
 
-    texts = [doc.page_content for doc in chunked_documents]
-
-    vectors = [
-        embeddings.embed_query(text)
-        for text in texts
-    ]
-
-    vectorstore = FAISS.from_embeddings(
-        text_embeddings=list(zip(texts, vectors)),
+    vectorstore = FAISS.from_documents(
+        documents=chunked_documents,
         embedding=embeddings
     )
+
+    st.write("Embeddings complete!")
 
     return vectorstore
 
@@ -120,6 +116,15 @@ def handle_userinput(user_question):
 
     st.session_state.chat_history = response["chat_history"]
     source_documents = response["source_documents"]
+    print("\n========== SOURCE DOCUMENTS ==========")
+
+    for i, doc in enumerate(source_documents):
+      print(f"\nDocument {i+1}")
+      print("Metadata:", doc.metadata)
+      print("Preview:", doc.page_content[:100])
+
+    print("=====================================\n")
+
     num_sources = len(source_documents)
 
     # Display chat history
