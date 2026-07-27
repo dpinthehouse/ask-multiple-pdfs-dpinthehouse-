@@ -3,34 +3,41 @@ import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain.text_splitter import CharacterTextSplitter
-from langchain.embeddings import OpenAIEmbeddings, HuggingFaceInstructEmbeddings
+from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chat_models import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from htmlTemplates import css, bot_template, user_template
-from langchain.llms import HuggingFaceHub
 from langchain.docstore.document import Document
 
 def get_pdf_documents(pdf_docs):
     documents = []
 
     for pdf in pdf_docs:
-        pdf_reader = PdfReader(pdf)
+        try:
+            pdf.seek(0)
+            pdf_reader = PdfReader(pdf)
 
-        for page_number, page in enumerate(pdf_reader.pages):
-            text = page.extract_text()
+            for page_number, page in enumerate(pdf_reader.pages):
+                text = page.extract_text()
 
-            if text:
-                documents.append(
-                    Document(
-                        page_content=text,
-                        metadata={
-                            "source": pdf.name,
-                            "page": page_number + 1
-                        }
+                if text:
+                    documents.append(
+                        Document(
+                            page_content=text,
+                            metadata={
+                                "source": pdf.name,
+                                "page": page_number + 1
+                            }
+                        )
                     )
-                )
+
+        except Exception as e:
+            st.error(
+                f"⚠️ Could not process '{pdf.name}'. "
+                "Please make sure it is a valid, readable PDF."
+            )
 
     return documents
 
@@ -65,7 +72,6 @@ def get_vectorstore(chunked_documents):
 
 def get_conversation_chain(vectorstore):
     llm = ChatOpenAI()
-    # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
 
     memory = ConversationBufferMemory(
         memory_key='chat_history', return_messages=True,output_key="answer")
@@ -116,14 +122,7 @@ def handle_userinput(user_question):
 
     st.session_state.chat_history = response["chat_history"]
     source_documents = response["source_documents"]
-    print("\n========== SOURCE DOCUMENTS ==========")
-
-    for i, doc in enumerate(source_documents):
-      print(f"\nDocument {i+1}")
-      print("Metadata:", doc.metadata)
-      print("Preview:", doc.page_content[:100])
-
-    print("=====================================\n")
+    
 
     num_sources = len(source_documents)
 
@@ -274,6 +273,12 @@ def main():
                 st.write("Step 1: Reading PDFs...")
 
                 documents = get_pdf_documents(selected_documents)
+                if not documents:
+                    st.warning(
+                       "No readable text was found in the selected PDF(s). "
+                       "Please upload PDFs containing extractable text."
+                    )
+                    st.stop()
 
                 num_pdfs = len(selected_documents)
                 num_pages = len(documents)
