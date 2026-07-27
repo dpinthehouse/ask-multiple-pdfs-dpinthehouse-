@@ -281,7 +281,7 @@ def main():
                     st.stop()
 
                 num_pdfs = len(selected_documents)
-                num_pages = len(documents)
+                
 
                 st.session_state.document_info = []
 
@@ -298,6 +298,9 @@ def main():
 
                   pdf.seek(0)
 
+                num_pages = sum(
+                   doc["pages"] for doc in st.session_state.document_info
+                )
                 st.write("Step 2: Splitting text...")
 
                 chunked_documents = get_text_chunks(documents)
